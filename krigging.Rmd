@@ -1,0 +1,14 @@
+---
+title: "Lab 6"
+author: "Julianna Renzi"
+date: "2/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+# Spatial krigging
