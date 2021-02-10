@@ -43,3 +43,100 @@ ca_counties <- st_transform(ca_counties, st_crs(ca_dgw)) # st is spatio-temporal
 
 ```
 
+Now plot
+
+```{r}
+ggplot() +
+  geom_sf(data = ca_counties) +
+  geom_sf(data = ca_dgw, aes(color = dgbs)) # dots are observations
+```
+
+Make it interactive!
+
+```{r}
+tmap_mode("view")
+
+tm_shape(ca_dgw) + # this uses leaflet behind the scenes
+  tm_dots("dgbs") # want depths
+```
+
+```{r}
+# just get one county
+sj_county <- ca_counties %>% 
+  filter(name == "San Joaquin") # see in geometry have the nodes for the county (single spatial polygon)
+
+# want the values in that county
+sj_depth <- ca_dgw %>% 
+  st_intersection(sj_county)
+
+plot(sj_depth)
+plot(sj_county)
+
+ggplot() +
+  geom_sf(data = sj_county) +
+  geom_sf(data = sj_depth, aes(color = dgbs))
+
+
+```
+
+Note pattern BEFORE you do analyses--looks like in the northeast the depth to groundwater increases and also slightly to the southwest
+
+NEED to be worried about "spatial singularities" (i.e. two points at the SAME POINT with different values--cannot compute). Need to remove or alter
+
+```{r}
+well_duplicates <- sj_depth %>% 
+  get_dupes(latitude, longitude) # find duplicates (from the janitor package)--only is a duplicate if BOTH lat and long are the same
+# see there are two points with duplicate information (in reality maybe you'd take the average but here we'll just remove them)
+
+sj_depth <- sj_depth %>% 
+  filter(!local_well %in% well_duplicates$local_well)
+
+sj_depth %>% 
+  get_dupes(latitude, longitude) # see it worked! No more singularity issue
+  
+```
+
+## Create variogram
+
+Will help determine weight each point gets for interpolation. Then we need to make a grid that tells R this is where we want predictions made
+
+```{r}
+sj_dgw_vgm <- variogram(dgbs ~ 1, data = sj_depth)
+
+plot(sj_dgw_vgm) # see it looks like a variogram (variance increases over distance)
+# BUT we want a function not a set of points!
+```
+
+```{r}
+sj_dgw_vgm_fit <- fit.variogram(sj_dgw_vgm, 
+                                model = (vgm(nugget = 20, psill = 3000, range = 30, model = "Gau")
+                                  # need estimate of nugget, range, and sill (based on plot above) + tell it which model you want to use (e.g. spherical etc--compare using errors and pick the best, which is Gaussian in this case)
+                                ))
+
+sj_dgw_vgm_fit # estimate for nugget, psill (2800), and range (~17)
+
+plot(sj_dgw_vgm, sj_dgw_vgm_fit) # overall looks pretty good, but maybe not as good with high values (but good enough)
+# see point of inflection around 17
+# bad models might not even converge
+```
+## Spatial kriging (interpolation)
+
+First need to make a grid for where we want to make predictions
+
+```{r}
+# want it only in San Juaquin 
+sj_grid <- st_bbox(sj_county) %>% 
+  st_as_stars(dx = 0.01, dy = 0.01) %>%  # stars is raster information that exists in multiple layers/bands. dx/dy give resolution of pixels
+  st_set_crs(4326) %>% # set reference system
+  st_crop(sj_county) # crop to sj_county
+
+plot(sj_grid)
+  
+```
+
+```{r}
+sj_dgw_krige <- krige(dgbs ~ 1, sj_depth, sj_grid, model = sj_dgw_vgm_fit) # from gstat package (function of 1 if we do ordinary kriging--constant but unknown field)
+
+plot(sj_dgw_krige) # stored as var1.pred (predicted)--also stores variance for each prediction
+```
+
