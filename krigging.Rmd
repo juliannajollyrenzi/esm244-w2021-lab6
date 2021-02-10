@@ -9,6 +9,37 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
+library(here)
+library(janitor)
+library(sf)
+library(tmap)
+library(gstat) # krigging
+library(stars) # use to make a grid
 ```
 
 # Spatial krigging
+
+```{r}
+# read in data 
+# CA depth to groundwater
+ca_dgw <- read_sf(here("ca_dgw"), layer = "F2013_DBGS_Points_20150720_093252") %>% # saying to read in the whole layer (anything that starts with that string/can have different extensions)
+  clean_names() # lower case snake case
+# measurements are in feet
+# negative depth is above the ground
+
+# check projection
+st_crs(ca_dgw)
+
+# now read in CA counties
+# want to read in entire layer so it's all bundled together
+ca_counties <- read_sf(here("ca_counties"), layer = "CA_Counties_TIGER2016") %>% 
+  clean_names() %>% 
+  select(name) # geometry is sticky!
+
+st_crs(ca_counties) # see it's different but has a crs (so don't do set crs, and instead use transform)
+
+ca_counties <- st_transform(ca_counties, st_crs(ca_dgw)) # st is spatio-temporal
+# this sets it to the crs of ca_dgw
+
+```
+
